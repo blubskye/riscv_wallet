@@ -17,7 +17,7 @@
 ###  A fully open source RISC-V based crypto wallet running 
 A RISC-V open hardware and software for a "cold wallet". Under the AGPL concept/ideag. 
 
-This concept has/will been published along with the AGPL to:
+*This concept has/will been published along with the AGPL to:
 *Pastebin
 *Hyphanet
 *Twitter
