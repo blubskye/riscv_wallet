@@ -5,11 +5,11 @@ A RISC-V open hardware and software for a "cold wallet". Under the AGPL concept
 Projects to be used:
 *NetBSD: [https://github.com/NetBSD/src]
 
-*Beagle-V: [https://github.com/beagleboard/beaglev-ahead]
+*RISC-V board
 
 *Wallets:
 *insert wallets here*
-*Monero [https://github.com/monero-project/monero]
+
 
 *Storage:
 *NVME preferred but sd card can be used, battery to keep nvme from losing all data. Diode may be needed.
