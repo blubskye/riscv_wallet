@@ -1,4 +1,4 @@
-### H3 A fully open source RISC-V based crypto wallet running 
+###  A fully open source RISC-V based crypto wallet running 
 A RISC-V open hardware and software for a "cold wallet". Under the AGPL concept
 
 
