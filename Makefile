@@ -439,6 +439,115 @@ security-audit:
 	@echo "       Security Audit Complete!"
 	@echo "=============================================="
 
+# ============================================================================
+# Fuzzing (AFL)
+# ============================================================================
+# American Fuzzy Lop (AFL) fuzzing support
+# Install: dnf install american-fuzzy-lop (or afl++)
+#
+# Usage:
+#   make fuzz-build          - Build all fuzz harnesses
+#   make fuzz-bip39          - Fuzz BIP-39 mnemonic parsing
+#   make fuzz-base58         - Fuzz Base58 encoding/decoding
+#   make fuzz-bech32         - Fuzz Bech32 encoding/decoding
+#   make fuzz-slip39         - Fuzz SLIP-39 share parsing
+#   make fuzz-rlp            - Fuzz RLP encoding/decoding
+
+FUZZDIR = fuzz
+FUZZ_HARNESS_DIR = $(FUZZDIR)/harnesses
+FUZZ_CORPUS_DIR = $(FUZZDIR)/corpus
+FUZZ_OUTPUT_DIR = $(FUZZDIR)/output
+FUZZ_CC = afl-gcc-fast
+
+# Fuzz harness sources
+FUZZ_HARNESSES = fuzz_bip39 fuzz_base58 fuzz_bech32 fuzz_slip39 fuzz_rlp
+
+# Common flags for fuzzing (no -Werror to allow AFL instrumentation warnings)
+FUZZ_CFLAGS = -Wall -Wextra -pedantic -std=c11 -g -O2
+FUZZ_CFLAGS += -I$(SRCDIR) -I$(LIBDIR)
+FUZZ_CFLAGS += -DNDEBUG
+
+# Build all fuzz harnesses
+# Try AFL instrumentation first, fall back to regular gcc for QEMU mode
+.PHONY: fuzz-build
+fuzz-build: dirs
+	@mkdir -p $(BINDIR)/fuzz $(FUZZ_OUTPUT_DIR)
+	@echo "Building fuzz harnesses..."
+	@for harness in $(FUZZ_HARNESSES); do \
+		echo "  Building $$harness..."; \
+		$(FUZZ_CC) $(FUZZ_CFLAGS) -o $(BINDIR)/fuzz/$$harness \
+			$(FUZZ_HARNESS_DIR)/$$harness.c \
+			$(SRCDIR)/crypto/bip39.c \
+			$(SRCDIR)/crypto/bip32.c \
+			$(SRCDIR)/crypto/pbkdf2.c \
+			$(SRCDIR)/crypto/slip39.c \
+			$(SRCDIR)/crypto/secp256k1.c \
+			$(SRCDIR)/security/memory.c \
+			$(SRCDIR)/util/base58.c \
+			$(SRCDIR)/util/bech32.c \
+			$(SRCDIR)/util/hex.c \
+			$(SRCDIR)/util/rlp.c \
+			$(SRCDIR)/crypto/ripemd160.c \
+			-lsodium -lsecp256k1 2>/dev/null || \
+		$(CC) $(FUZZ_CFLAGS) -o $(BINDIR)/fuzz/$$harness \
+			$(FUZZ_HARNESS_DIR)/$$harness.c \
+			$(SRCDIR)/crypto/bip39.c \
+			$(SRCDIR)/crypto/bip32.c \
+			$(SRCDIR)/crypto/pbkdf2.c \
+			$(SRCDIR)/crypto/slip39.c \
+			$(SRCDIR)/crypto/secp256k1.c \
+			$(SRCDIR)/security/memory.c \
+			$(SRCDIR)/util/base58.c \
+			$(SRCDIR)/util/bech32.c \
+			$(SRCDIR)/util/hex.c \
+			$(SRCDIR)/util/rlp.c \
+			$(SRCDIR)/crypto/ripemd160.c \
+			-lsodium -lsecp256k1 || echo "    ERROR: $$harness build failed"; \
+	done
+	@echo "Fuzz harnesses built in $(BINDIR)/fuzz/"
+	@echo "Note: If AFL instrumentation failed, use QEMU mode: afl-fuzz -Q ..."
+
+# Individual fuzz targets
+.PHONY: fuzz-bip39
+fuzz-bip39: fuzz-build
+	@mkdir -p $(FUZZ_OUTPUT_DIR)/bip39
+	@echo "Starting AFL fuzzing of BIP-39..."
+	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/bip39/"
+	afl-fuzz -i $(FUZZ_CORPUS_DIR)/bip39 -o $(FUZZ_OUTPUT_DIR)/bip39 -- $(BINDIR)/fuzz/fuzz_bip39
+
+.PHONY: fuzz-base58
+fuzz-base58: fuzz-build
+	@mkdir -p $(FUZZ_OUTPUT_DIR)/base58
+	@echo "Starting AFL fuzzing of Base58..."
+	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/base58/"
+	afl-fuzz -i $(FUZZ_CORPUS_DIR)/base58 -o $(FUZZ_OUTPUT_DIR)/base58 -- $(BINDIR)/fuzz/fuzz_base58
+
+.PHONY: fuzz-bech32
+fuzz-bech32: fuzz-build
+	@mkdir -p $(FUZZ_OUTPUT_DIR)/bech32
+	@echo "Starting AFL fuzzing of Bech32..."
+	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/bech32/"
+	afl-fuzz -i $(FUZZ_CORPUS_DIR)/bech32 -o $(FUZZ_OUTPUT_DIR)/bech32 -- $(BINDIR)/fuzz/fuzz_bech32
+
+.PHONY: fuzz-slip39
+fuzz-slip39: fuzz-build
+	@mkdir -p $(FUZZ_OUTPUT_DIR)/slip39
+	@echo "Starting AFL fuzzing of SLIP-39..."
+	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/slip39/"
+	afl-fuzz -i $(FUZZ_CORPUS_DIR)/slip39 -o $(FUZZ_OUTPUT_DIR)/slip39 -- $(BINDIR)/fuzz/fuzz_slip39
+
+.PHONY: fuzz-rlp
+fuzz-rlp: fuzz-build
+	@mkdir -p $(FUZZ_OUTPUT_DIR)/rlp
+	@echo "Starting AFL fuzzing of RLP..."
+	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/rlp/"
+	afl-fuzz -i $(FUZZ_CORPUS_DIR)/rlp -o $(FUZZ_OUTPUT_DIR)/rlp -- $(BINDIR)/fuzz/fuzz_rlp
+
+# Clean fuzz outputs
+.PHONY: fuzz-clean
+fuzz-clean:
+	rm -rf $(FUZZ_OUTPUT_DIR) $(BINDIR)/fuzz
+
 # Format code
 .PHONY: format
 format:
@@ -493,3 +602,12 @@ help:
 	@echo "  sanitize-thread  - ThreadSanitizer (data races)"
 	@echo "  valgrind         - Valgrind memory check (thorough but slow)"
 	@echo "  security-audit   - Full security audit (all sanitizers + static)"
+	@echo ""
+	@echo "Fuzzing (AFL):"
+	@echo "  fuzz-build       - Build all fuzz harnesses"
+	@echo "  fuzz-bip39       - Fuzz BIP-39 mnemonic parsing"
+	@echo "  fuzz-base58      - Fuzz Base58 encoding/decoding"
+	@echo "  fuzz-bech32      - Fuzz Bech32 encoding/decoding"
+	@echo "  fuzz-slip39      - Fuzz SLIP-39 share parsing"
+	@echo "  fuzz-rlp         - Fuzz RLP encoding/decoding"
+	@echo "  fuzz-clean       - Remove fuzz outputs"

@@ -21,3 +21,6 @@ Thumbs.db
 cookie*.txt
 *.tmp
 *.log
+
+# Fuzzing outputs
+fuzz/output/
