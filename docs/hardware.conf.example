@@ -1,0 +1,184 @@
+# RISC-V Wallet Hardware Configuration
+# Example configuration file
+#
+# Copy this file to one of these locations:
+#   ~/.config/riscv_wallet/hardware.conf (user config, recommended)
+#   /etc/riscv_wallet/hardware.conf (system-wide config)
+#
+# Or set the environment variable:
+#   export RISCV_WALLET_HWCONFIG=/path/to/your/hardware.conf
+#
+# Run the setup script for interactive configuration:
+#   ./tools/hw-setup.sh
+
+[general]
+# Board identifier (for reference only)
+board_name = my-riscv-board
+
+#####################################################################
+# DISPLAY CONFIGURATION
+#####################################################################
+
+[display]
+# Display types:
+#   terminal     - Terminal/console output (default, no special hardware)
+#   spi_ili9341  - ILI9341 240x320 SPI TFT LCD
+#   spi_st7789   - ST7789 240x240 or 240x320 SPI TFT LCD
+#   spi_st7735   - ST7735 128x160 SPI TFT LCD
+#   spi_ssd1306  - SSD1306 128x64 OLED (SPI mode)
+#   i2c_ssd1306  - SSD1306 128x64 OLED (I2C mode)
+#   i2c_sh1106   - SH1106 128x64 OLED (I2C mode)
+#   hdmi         - HDMI/Framebuffer output
+#   custom       - Custom driver (specify path to shared library)
+
+type = terminal
+
+# For SPI displays:
+# spi_device = /dev/spidev0.0
+# spi_speed = 32000000
+# gpio_dc = 25
+# gpio_reset = 24
+# gpio_backlight = -1
+
+# For I2C displays:
+# i2c_device = /dev/i2c-1
+# i2c_address = 0x3c
+
+# For HDMI/framebuffer:
+# fb_device = /dev/fb0
+
+# For custom driver:
+# custom_driver = /usr/lib/riscv_wallet/display_custom.so
+
+# Display dimensions
+width = 80
+height = 24
+
+# Rotation: 0, 90, 180, or 270 degrees
+rotation = 0
+
+#####################################################################
+# GPIO BUTTON CONFIGURATION
+#####################################################################
+
+[gpio]
+# GPIO chip device
+chip = /dev/gpiochip0
+
+# Optional: chip name for identification
+# chip_name = pinctrl-bcm2835
+
+# Define buttons by creating [button.N] sections
+# Each button needs:
+#   pin         - GPIO pin number
+#   action      - Button function (up, down, left, right, enter, back, menu, power)
+#   active_low  - true if button connects to GND when pressed (most common)
+#   pull_up     - true to enable internal pull-up resistor
+#   debounce_ms - Debounce time in milliseconds
+#   label       - Human-readable label (optional)
+
+# Example: 5-button navigation setup
+# Typical for small SBC projects with tactile buttons
+
+# [button.0]
+# pin = 17
+# action = up
+# active_low = true
+# pull_up = true
+# debounce_ms = 50
+# label = Up
+
+# [button.1]
+# pin = 27
+# action = down
+# active_low = true
+# pull_up = true
+# debounce_ms = 50
+# label = Down
+
+# [button.2]
+# pin = 22
+# action = enter
+# active_low = true
+# pull_up = true
+# debounce_ms = 50
+# label = Select
+
+# [button.3]
+# pin = 23
+# action = back
+# active_low = true
+# pull_up = true
+# debounce_ms = 50
+# label = Back
+
+# [button.4]
+# pin = 24
+# action = menu
+# active_low = true
+# pull_up = true
+# debounce_ms = 50
+# label = Menu
+
+#####################################################################
+# ADDITIONAL HARDWARE
+#####################################################################
+
+[hardware]
+# Hardware random number generator
+# Set to true if your board has /dev/hwrng
+hardware_rng = false
+rng_device = /dev/hwrng
+
+# Secure element (if available)
+# For hardware key storage
+secure_element = false
+# se_device = /dev/se0
+
+#####################################################################
+# BOARD-SPECIFIC EXAMPLES
+#####################################################################
+
+# === VisionFive 2 with SPI TFT ===
+# [display]
+# type = spi_ili9341
+# spi_device = /dev/spidev0.0
+# spi_speed = 32000000
+# gpio_dc = 25
+# gpio_reset = 24
+# width = 240
+# height = 320
+# rotation = 0
+#
+# [gpio]
+# chip = /dev/gpiochip0
+#
+# [button.0]
+# pin = 17
+# action = up
+# ...
+
+# === LicheePi 4A with I2C OLED ===
+# [display]
+# type = i2c_ssd1306
+# i2c_device = /dev/i2c-1
+# i2c_address = 0x3c
+# width = 128
+# height = 64
+# rotation = 0
+#
+# [gpio]
+# chip = /dev/gpiochip0
+#
+# [button.0]
+# pin = 5
+# action = up
+# ...
+
+# === Milk-V Duo with Framebuffer ===
+# [display]
+# type = hdmi
+# fb_device = /dev/fb0
+# width = 1920
+# height = 1080
+# rotation = 0

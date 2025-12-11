@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+obj/
+
+# Profile-guided optimization data
+*.gcda
+*.gcno
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary/test files
+cookie*.txt
+*.tmp
+*.log
