@@ -457,7 +457,24 @@ FUZZDIR = fuzz
 FUZZ_HARNESS_DIR = $(FUZZDIR)/harnesses
 FUZZ_CORPUS_DIR = $(FUZZDIR)/corpus
 FUZZ_OUTPUT_DIR = $(FUZZDIR)/output
-FUZZ_CC = afl-gcc-fast
+
+# AFL++ detection: prefer local build, fall back to system install
+# Override with: make fuzz-build AFL_PATH=/custom/path
+AFL_LOCAL_PATH = $(HOME)/Downloads/AFLplusplus
+AFL_PATH ?= $(shell if [ -x "$(AFL_LOCAL_PATH)/afl-gcc-fast" ]; then echo "$(AFL_LOCAL_PATH)"; \
+            elif command -v afl-gcc-fast >/dev/null 2>&1; then echo ""; \
+            else echo "$(AFL_LOCAL_PATH)"; fi)
+
+# Set compiler and fuzzer paths based on AFL_PATH
+ifeq ($(AFL_PATH),)
+  # System install
+  FUZZ_CC = afl-gcc-fast
+  AFL_FUZZ = afl-fuzz
+else
+  # Local build
+  FUZZ_CC = $(AFL_PATH)/afl-gcc-fast
+  AFL_FUZZ = $(AFL_PATH)/afl-fuzz
+endif
 
 # Fuzz harness sources
 FUZZ_HARNESSES = fuzz_bip39 fuzz_base58 fuzz_bech32 fuzz_slip39 fuzz_rlp
@@ -513,35 +530,35 @@ fuzz-bip39: fuzz-build
 	@mkdir -p $(FUZZ_OUTPUT_DIR)/bip39
 	@echo "Starting AFL fuzzing of BIP-39..."
 	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/bip39/"
-	afl-fuzz -i $(FUZZ_CORPUS_DIR)/bip39 -o $(FUZZ_OUTPUT_DIR)/bip39 -- $(BINDIR)/fuzz/fuzz_bip39
+	$(AFL_FUZZ) -i $(FUZZ_CORPUS_DIR)/bip39 -o $(FUZZ_OUTPUT_DIR)/bip39 -- $(BINDIR)/fuzz/fuzz_bip39
 
 .PHONY: fuzz-base58
 fuzz-base58: fuzz-build
 	@mkdir -p $(FUZZ_OUTPUT_DIR)/base58
 	@echo "Starting AFL fuzzing of Base58..."
 	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/base58/"
-	afl-fuzz -i $(FUZZ_CORPUS_DIR)/base58 -o $(FUZZ_OUTPUT_DIR)/base58 -- $(BINDIR)/fuzz/fuzz_base58
+	$(AFL_FUZZ) -i $(FUZZ_CORPUS_DIR)/base58 -o $(FUZZ_OUTPUT_DIR)/base58 -- $(BINDIR)/fuzz/fuzz_base58
 
 .PHONY: fuzz-bech32
 fuzz-bech32: fuzz-build
 	@mkdir -p $(FUZZ_OUTPUT_DIR)/bech32
 	@echo "Starting AFL fuzzing of Bech32..."
 	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/bech32/"
-	afl-fuzz -i $(FUZZ_CORPUS_DIR)/bech32 -o $(FUZZ_OUTPUT_DIR)/bech32 -- $(BINDIR)/fuzz/fuzz_bech32
+	$(AFL_FUZZ) -i $(FUZZ_CORPUS_DIR)/bech32 -o $(FUZZ_OUTPUT_DIR)/bech32 -- $(BINDIR)/fuzz/fuzz_bech32
 
 .PHONY: fuzz-slip39
 fuzz-slip39: fuzz-build
 	@mkdir -p $(FUZZ_OUTPUT_DIR)/slip39
 	@echo "Starting AFL fuzzing of SLIP-39..."
 	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/slip39/"
-	afl-fuzz -i $(FUZZ_CORPUS_DIR)/slip39 -o $(FUZZ_OUTPUT_DIR)/slip39 -- $(BINDIR)/fuzz/fuzz_slip39
+	$(AFL_FUZZ) -i $(FUZZ_CORPUS_DIR)/slip39 -o $(FUZZ_OUTPUT_DIR)/slip39 -- $(BINDIR)/fuzz/fuzz_slip39
 
 .PHONY: fuzz-rlp
 fuzz-rlp: fuzz-build
 	@mkdir -p $(FUZZ_OUTPUT_DIR)/rlp
 	@echo "Starting AFL fuzzing of RLP..."
 	@echo "Press Ctrl+C to stop. Results in $(FUZZ_OUTPUT_DIR)/rlp/"
-	afl-fuzz -i $(FUZZ_CORPUS_DIR)/rlp -o $(FUZZ_OUTPUT_DIR)/rlp -- $(BINDIR)/fuzz/fuzz_rlp
+	$(AFL_FUZZ) -i $(FUZZ_CORPUS_DIR)/rlp -o $(FUZZ_OUTPUT_DIR)/rlp -- $(BINDIR)/fuzz/fuzz_rlp
 
 # Clean fuzz outputs
 .PHONY: fuzz-clean
@@ -603,7 +620,7 @@ help:
 	@echo "  valgrind         - Valgrind memory check (thorough but slow)"
 	@echo "  security-audit   - Full security audit (all sanitizers + static)"
 	@echo ""
-	@echo "Fuzzing (AFL):"
+	@echo "Fuzzing (AFL++):"
 	@echo "  fuzz-build       - Build all fuzz harnesses"
 	@echo "  fuzz-bip39       - Fuzz BIP-39 mnemonic parsing"
 	@echo "  fuzz-base58      - Fuzz Base58 encoding/decoding"
@@ -611,3 +628,4 @@ help:
 	@echo "  fuzz-slip39      - Fuzz SLIP-39 share parsing"
 	@echo "  fuzz-rlp         - Fuzz RLP encoding/decoding"
 	@echo "  fuzz-clean       - Remove fuzz outputs"
+	@echo "  AFL_PATH=...     - Override AFL++ path (auto-detects local/system)"
