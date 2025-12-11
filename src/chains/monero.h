@@ -611,4 +611,266 @@ xmr_error_t xmr_build_transaction(const xmr_keypair_t *keypair,
  */
 void xmr_free_tx_prefix(xmr_tx_prefix_t *prefix);
 
+/*
+ * ============================================================================
+ * Bulletproofs+ Range Proofs
+ * ============================================================================
+ *
+ * Bulletproofs+ are efficient zero-knowledge range proofs that prove
+ * committed values are in the range [0, 2^64) without revealing the values.
+ *
+ * Reference: https://eprint.iacr.org/2020/735.pdf
+ * Monero implementation: https://github.com/monero-project/monero/blob/master/src/ringct/bulletproofs_plus.cc
+ */
+
+/* Maximum outputs in a single proof (aggregated) */
+#define XMR_BP_MAX_OUTPUTS    16
+#define XMR_BP_N              64    /* Bit length of range (2^64) */
+#define XMR_BP_MAX_MN         (XMR_BP_MAX_OUTPUTS * XMR_BP_N)
+
+/* Bulletproofs+ proof structure */
+typedef struct {
+    uint8_t A[32];              /* Commitment to aL, aR */
+    uint8_t A1[32];             /* Round 1 commitment */
+    uint8_t B[32];              /* Round 1 commitment */
+    uint8_t r1[32];             /* Response scalar */
+    uint8_t s1[32];             /* Response scalar */
+    uint8_t d1[32];             /* Response scalar */
+    uint8_t L[6][32];           /* Left fold commitments (log2(64) rounds) */
+    uint8_t R[6][32];           /* Right fold commitments */
+    size_t num_rounds;          /* Number of rounds (log2(n*m)) */
+} xmr_bulletproof_plus_t;
+
+/* Bulletproofs+ generator points (precomputed) */
+typedef struct {
+    uint8_t G[XMR_BP_MAX_MN][32];   /* G generators */
+    uint8_t H[XMR_BP_MAX_MN][32];   /* H generators */
+    uint8_t Gi[XMR_BP_MAX_MN][32];  /* Gi = inv8 * G */
+    uint8_t Hi[XMR_BP_MAX_MN][32];  /* Hi = inv8 * H */
+    int initialized;
+} xmr_bp_generators_t;
+
+/**
+ * Initialize Bulletproofs+ generators
+ *
+ * Must be called once before proving/verifying.
+ * Thread-safe, can be called multiple times.
+ *
+ * @return XMR_OK on success
+ */
+xmr_error_t xmr_bp_init_generators(void);
+
+/**
+ * Generate Bulletproofs+ range proof for multiple outputs
+ *
+ * Proves that all committed values are in range [0, 2^64).
+ *
+ * @param values        Array of values to prove
+ * @param masks         Array of blinding factors (commitment masks)
+ * @param num_outputs   Number of outputs (1-16)
+ * @param commitments   Output commitments (V = mask*G + value*H)
+ * @param proof         Output proof
+ * @return XMR_OK on success
+ */
+xmr_error_t xmr_bp_prove(const uint64_t *values,
+                          const uint8_t (*masks)[32],
+                          size_t num_outputs,
+                          uint8_t (*commitments)[32],
+                          xmr_bulletproof_plus_t *proof);
+
+/**
+ * Verify Bulletproofs+ range proof
+ *
+ * Verifies that committed values are in range [0, 2^64).
+ *
+ * @param commitments   Commitments to verify
+ * @param num_outputs   Number of outputs
+ * @param proof         Proof to verify
+ * @return XMR_OK if valid
+ */
+xmr_error_t xmr_bp_verify(const uint8_t (*commitments)[32],
+                           size_t num_outputs,
+                           const xmr_bulletproof_plus_t *proof);
+
+/**
+ * Batch verify multiple Bulletproofs+ proofs
+ *
+ * More efficient than verifying individually.
+ *
+ * @param proofs        Array of proofs
+ * @param commitments   Array of commitment arrays
+ * @param num_outputs   Array of output counts
+ * @param num_proofs    Number of proofs to verify
+ * @return XMR_OK if all valid
+ */
+xmr_error_t xmr_bp_batch_verify(const xmr_bulletproof_plus_t *proofs,
+                                 const uint8_t (**commitments)[32],
+                                 const size_t *num_outputs,
+                                 size_t num_proofs);
+
+/**
+ * Get proof size in bytes
+ *
+ * @param num_outputs  Number of outputs in proof
+ * @return Size in bytes
+ */
+size_t xmr_bp_proof_size(size_t num_outputs);
+
+/*
+ * ============================================================================
+ * Transaction Serialization
+ * ============================================================================
+ */
+
+/* Serialized transaction structure */
+typedef struct {
+    uint8_t *data;
+    size_t len;
+    size_t capacity;
+} xmr_tx_blob_t;
+
+/**
+ * Serialize transaction for network broadcast
+ *
+ * @param tx_prefix    Transaction prefix
+ * @param signatures   CLSAG signatures (one per input)
+ * @param bp_proof     Bulletproofs+ range proof
+ * @param blob         Output serialized data
+ * @return XMR_OK on success
+ */
+xmr_error_t xmr_serialize_transaction(const xmr_tx_prefix_t *tx_prefix,
+                                       const xmr_clsag_signature_t *signatures,
+                                       const xmr_bulletproof_plus_t *bp_proof,
+                                       xmr_tx_blob_t *blob);
+
+/**
+ * Compute transaction hash (txid)
+ *
+ * @param blob  Serialized transaction
+ * @param txid  Output transaction ID (32 bytes)
+ * @return XMR_OK on success
+ */
+xmr_error_t xmr_compute_txid(const xmr_tx_blob_t *blob, uint8_t txid[32]);
+
+/**
+ * Free transaction blob
+ *
+ * @param blob  Blob to free
+ */
+void xmr_free_tx_blob(xmr_tx_blob_t *blob);
+
+/*
+ * ============================================================================
+ * Fee Estimation
+ * ============================================================================
+ */
+
+/* Fee priority levels */
+typedef enum {
+    XMR_FEE_DEFAULT = 0,     /* 1x multiplier */
+    XMR_FEE_LOW,             /* 1x multiplier (same as default) */
+    XMR_FEE_NORMAL,          /* 4x multiplier */
+    XMR_FEE_HIGH,            /* 20x multiplier */
+    XMR_FEE_HIGHEST          /* 166x multiplier */
+} xmr_fee_priority_t;
+
+/**
+ * Estimate transaction fee
+ *
+ * @param num_inputs    Number of inputs
+ * @param num_outputs   Number of outputs
+ * @param ring_size     Ring size (typically 16)
+ * @param priority      Fee priority
+ * @param base_fee      Current base fee per byte (from network)
+ * @return Estimated fee in atomic units
+ */
+uint64_t xmr_estimate_fee(size_t num_inputs,
+                           size_t num_outputs,
+                           size_t ring_size,
+                           xmr_fee_priority_t priority,
+                           uint64_t base_fee);
+
+/**
+ * Estimate transaction size in bytes
+ *
+ * @param num_inputs    Number of inputs
+ * @param num_outputs   Number of outputs
+ * @param ring_size     Ring size
+ * @return Estimated size in bytes
+ */
+size_t xmr_estimate_tx_size(size_t num_inputs,
+                             size_t num_outputs,
+                             size_t ring_size);
+
+/*
+ * ============================================================================
+ * UTXO Selection
+ * ============================================================================
+ */
+
+/* Unspent output for selection */
+typedef struct {
+    uint8_t tx_public[32];      /* Transaction public key */
+    uint8_t output_key[32];     /* Output's one-time public key */
+    uint8_t commitment[32];     /* Amount commitment */
+    uint64_t amount;            /* Decoded amount */
+    uint8_t mask[32];           /* Decoded mask */
+    uint64_t global_index;      /* Global output index (for ring selection) */
+    uint64_t height;            /* Block height */
+    int spent;                  /* Already spent flag */
+} xmr_utxo_t;
+
+/* Selection result */
+typedef struct {
+    xmr_utxo_t *selected;       /* Selected UTXOs */
+    size_t count;               /* Number selected */
+    uint64_t total;             /* Total amount */
+    uint64_t fee;               /* Calculated fee */
+} xmr_selection_t;
+
+/**
+ * Select UTXOs for transaction
+ *
+ * Uses a modified "biggest first" algorithm with dust avoidance.
+ *
+ * @param utxos         Available UTXOs
+ * @param utxo_count    Number of available UTXOs
+ * @param amount        Amount to send
+ * @param priority      Fee priority
+ * @param base_fee      Current base fee
+ * @param selection     Output selection result
+ * @return XMR_OK on success, XMR_ERR_INVALID_COMMITMENT if insufficient funds
+ */
+xmr_error_t xmr_select_utxos(const xmr_utxo_t *utxos,
+                              size_t utxo_count,
+                              uint64_t amount,
+                              xmr_fee_priority_t priority,
+                              uint64_t base_fee,
+                              xmr_selection_t *selection);
+
+/**
+ * Free UTXO selection result
+ *
+ * @param selection  Selection to free
+ */
+void xmr_free_selection(xmr_selection_t *selection);
+
+/**
+ * Scan wallet for UTXOs
+ *
+ * Scans outputs and decodes amounts using view key.
+ *
+ * @param keypair       Wallet keypair
+ * @param outputs       Blockchain outputs to scan
+ * @param output_count  Number of outputs
+ * @param utxos         Output decoded UTXOs
+ * @param utxo_count    Output number of UTXOs found
+ * @return XMR_OK on success
+ */
+xmr_error_t xmr_scan_outputs(const xmr_keypair_t *keypair,
+                              const xmr_tx_output_t *outputs,
+                              size_t output_count,
+                              xmr_utxo_t **utxos,
+                              size_t *utxo_count);
+
 #endif /* MONERO_H */

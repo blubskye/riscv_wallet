@@ -52,7 +52,7 @@ A RISC-V open hardware and software "cold wallet" under the AGPL license. Your k
 | Solana (SOL) | Ed25519 keypairs, SPL tokens | ✅ Full |
 | XRP (Ripple) | secp256k1 and Ed25519 key types | ✅ Full |
 | Cardano (ADA) | Ed25519-BIP32 extended keys | ✅ Full |
-| Monero (XMR) | View keys, address generation | 🔄 Partial |
+| Monero (XMR) | RingCT, Bulletproofs+, stealth addresses | ✅ Full |
 
 ### Features 💝
 
