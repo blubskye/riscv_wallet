@@ -712,16 +712,19 @@ int xrp_format_amount(uint64_t drops, char *output, size_t output_len)
     if (fraction == 0) {
         snprintf(output, output_len, "%llu XRP", (unsigned long long)xrp);
     } else {
-        /* Format with decimal */
-        snprintf(output, output_len, "%llu.%06llu XRP",
-                 (unsigned long long)xrp, (unsigned long long)fraction);
+        /* Format fractional part, removing trailing zeros */
+        char frac_str[8];
+        snprintf(frac_str, sizeof(frac_str), "%06llu", (unsigned long long)fraction);
 
-        /* Remove trailing zeros */
-        char *p = output + strlen(output) - 5;  /* Before " XRP" */
-        while (p > output && *(p - 1) == '0' && *(p - 2) != '.') {
-            memmove(p - 1, p, strlen(p) + 1);
-            p--;
+        /* Find last non-zero digit */
+        int last_nonzero = 5;
+        while (last_nonzero > 0 && frac_str[last_nonzero] == '0') {
+            last_nonzero--;
         }
+        frac_str[last_nonzero + 1] = '\0';
+
+        snprintf(output, output_len, "%llu.%s XRP",
+                 (unsigned long long)xrp, frac_str);
     }
 
     return 0;

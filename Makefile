@@ -331,6 +331,114 @@ analyze:
 	@echo "Running clang static analyzer..."
 	scan-build make clean all
 
+# ============================================================================
+# Security Testing / Sanitizers
+# ============================================================================
+# AddressSanitizer (ASan) - Buffer overflows, use-after-free, memory leaks
+# Usage: make sanitize-address
+.PHONY: sanitize-address
+sanitize-address: CFLAGS += -fsanitize=address -fno-omit-frame-pointer -g
+sanitize-address: LDFLAGS += -fsanitize=address
+sanitize-address: clean dirs $(TEST_TARGET)
+	@echo ""
+	@echo "Running tests with AddressSanitizer..."
+	@echo "========================================="
+	ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 ./$(TEST_TARGET)
+	@echo ""
+	@echo "AddressSanitizer: No issues detected!"
+
+# UndefinedBehaviorSanitizer (UBSan) - Integer overflow, null deref, etc.
+# Usage: make sanitize-undefined
+.PHONY: sanitize-undefined
+sanitize-undefined: CFLAGS += -fsanitize=undefined -fno-omit-frame-pointer -g
+sanitize-undefined: LDFLAGS += -fsanitize=undefined
+sanitize-undefined: clean dirs $(TEST_TARGET)
+	@echo ""
+	@echo "Running tests with UndefinedBehaviorSanitizer..."
+	@echo "================================================="
+	UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$(TEST_TARGET)
+	@echo ""
+	@echo "UBSan: No undefined behavior detected!"
+
+# MemorySanitizer (MSan) - Uninitialized memory reads (Clang only)
+# Usage: make sanitize-memory COMPILER=clang
+.PHONY: sanitize-memory
+sanitize-memory: CFLAGS += -fsanitize=memory -fno-omit-frame-pointer -g -fPIE
+sanitize-memory: LDFLAGS += -fsanitize=memory -pie
+sanitize-memory: clean dirs $(TEST_TARGET)
+	@echo ""
+	@echo "Running tests with MemorySanitizer..."
+	@echo "======================================"
+	MSAN_OPTIONS=halt_on_error=1 ./$(TEST_TARGET)
+	@echo ""
+	@echo "MemorySanitizer: No uninitialized reads detected!"
+
+# ThreadSanitizer (TSan) - Data races (if multithreading is added later)
+# Usage: make sanitize-thread
+.PHONY: sanitize-thread
+sanitize-thread: CFLAGS += -fsanitize=thread -fno-omit-frame-pointer -g
+sanitize-thread: LDFLAGS += -fsanitize=thread
+sanitize-thread: clean dirs $(TEST_TARGET)
+	@echo ""
+	@echo "Running tests with ThreadSanitizer..."
+	@echo "======================================"
+	./$(TEST_TARGET)
+	@echo ""
+	@echo "ThreadSanitizer: No data races detected!"
+
+# Combined ASan + UBSan (most useful for security testing)
+# Usage: make sanitize
+.PHONY: sanitize
+sanitize: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer -g
+sanitize: LDFLAGS += -fsanitize=address,undefined
+sanitize: clean dirs $(TEST_TARGET)
+	@echo ""
+	@echo "Running tests with ASan + UBSan..."
+	@echo "==================================="
+	ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$(TEST_TARGET)
+	@echo ""
+	@echo "All sanitizers passed! No memory or undefined behavior issues."
+
+# Valgrind memory check (slower but very thorough)
+# Usage: make valgrind
+.PHONY: valgrind
+valgrind: DEBUG=1
+valgrind: clean dirs $(TEST_TARGET)
+	@echo ""
+	@echo "Running tests with Valgrind..."
+	@echo "==============================="
+	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
+		--error-exitcode=1 ./$(TEST_TARGET)
+	@echo ""
+	@echo "Valgrind: No memory errors detected!"
+
+# Full security audit (all sanitizers + static analysis)
+# Usage: make security-audit
+.PHONY: security-audit
+security-audit:
+	@echo "=============================================="
+	@echo "       RISC-V Wallet Security Audit"
+	@echo "=============================================="
+	@echo ""
+	@echo "[1/5] Static Analysis (cppcheck)..."
+	cppcheck --enable=all --error-exitcode=1 --std=c11 $(SRCDIR) 2>&1 || true
+	@echo ""
+	@echo "[2/5] AddressSanitizer (buffer overflow, use-after-free)..."
+	$(MAKE) sanitize-address
+	@echo ""
+	@echo "[3/5] UndefinedBehaviorSanitizer (integer overflow, null deref)..."
+	$(MAKE) sanitize-undefined
+	@echo ""
+	@echo "[4/5] Combined ASan + UBSan..."
+	$(MAKE) sanitize
+	@echo ""
+	@echo "[5/5] Valgrind (memory leaks, uninitialized reads)..."
+	$(MAKE) valgrind || echo "Valgrind not installed, skipping..."
+	@echo ""
+	@echo "=============================================="
+	@echo "       Security Audit Complete!"
+	@echo "=============================================="
+
 # Format code
 .PHONY: format
 format:
@@ -376,3 +484,12 @@ help:
 	@echo "  RISCV_OPTIMIZE=thead   - T-Head C910 (LicheePi 4A)"
 	@echo "  RISCV_OPTIMIZE=spacemit - SpacemiT K1 with Vector"
 	@echo "  RISCV_OPTIMIZE=crypto  - Full scalar crypto (Zk)"
+	@echo ""
+	@echo "Security Testing:"
+	@echo "  sanitize         - Run ASan + UBSan combined (recommended)"
+	@echo "  sanitize-address - AddressSanitizer (buffer overflow, use-after-free)"
+	@echo "  sanitize-undefined - UndefinedBehaviorSanitizer (integer overflow)"
+	@echo "  sanitize-memory  - MemorySanitizer (uninitialized reads, Clang only)"
+	@echo "  sanitize-thread  - ThreadSanitizer (data races)"
+	@echo "  valgrind         - Valgrind memory check (thorough but slow)"
+	@echo "  security-audit   - Full security audit (all sanitizers + static)"
