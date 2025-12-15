@@ -178,6 +178,7 @@ static void generate_shares(const uint8_t *secret, size_t secret_len,
 {
     /* Polynomial coefficients: coeff[0] = secret, coeff[1..threshold-1] = random */
     uint8_t coeffs[16][32];  /* Max threshold of 16 */
+    uint8_t x_powers[16];    /* Pre-computed powers of x */
 
     /* First coefficient is the secret */
     memcpy(coeffs[0], secret, secret_len);
@@ -192,17 +193,19 @@ static void generate_shares(const uint8_t *secret, size_t secret_len,
         uint8_t x = x_values[share_idx];
         memset(shares[share_idx], 0, secret_len);
 
-        for (uint8_t coeff_idx = 0; coeff_idx < threshold; coeff_idx++) {
-            /* Compute x^coeff_idx */
-            uint8_t x_power = 1;
-            for (uint8_t p = 0; p < coeff_idx; p++) {
-                x_power = gf256_mul(x_power, x);
-            }
+        /* Pre-compute all powers of x needed for this share
+         * This eliminates O(threshold^2) multiplications per share */
+        x_powers[0] = 1;
+        for (uint8_t p = 1; p < threshold; p++) {
+            x_powers[p] = gf256_mul(x_powers[p - 1], x);
+        }
 
+        /* Evaluate polynomial using pre-computed powers */
+        for (uint8_t coeff_idx = 0; coeff_idx < threshold; coeff_idx++) {
             /* Add coeff * x^coeff_idx to share */
             for (size_t byte_idx = 0; byte_idx < secret_len; byte_idx++) {
                 shares[share_idx][byte_idx] ^=
-                    gf256_mul(coeffs[coeff_idx][byte_idx], x_power);
+                    gf256_mul(coeffs[coeff_idx][byte_idx], x_powers[coeff_idx]);
             }
         }
     }

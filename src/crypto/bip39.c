@@ -55,12 +55,9 @@ int bip39_generate_mnemonic(char *mnemonic, size_t mnemonic_len, int word_count)
     /* Calculate checksum (first CS bits of SHA256(entropy)) */
     crypto_hash_sha256(hash, entropy, entropy_size);
 
-    /* Create data buffer with entropy + checksum byte */
-    data = malloc(entropy_size + 1);
-    if (data == NULL) {
-        secure_wipe(entropy, sizeof(entropy));
-        return -1;
-    }
+    /* Stack allocation for entropy + checksum byte (max 33 bytes) */
+    uint8_t data_buf[BIP39_ENTROPY_256 + 1];
+    data = data_buf;
     memcpy(data, entropy, entropy_size);
     data[entropy_size] = hash[0];  /* Add checksum byte */
 
@@ -92,19 +89,19 @@ int bip39_generate_mnemonic(char *mnemonic, size_t mnemonic_len, int word_count)
         const char *word = bip39_get_word(word_index);
         if (word != NULL) {
             size_t wlen = strlen(word);
-            if (pos + wlen < mnemonic_len) {
-                strcpy(mnemonic + pos, word);
+            size_t remaining = mnemonic_len - pos - 1;
+            if (wlen <= remaining) {
+                memcpy(mnemonic + pos, word, wlen);
                 pos += wlen;
             }
         }
     }
     mnemonic[pos] = '\0';
 
-    /* Cleanup */
+    /* Cleanup - data is now stack allocated */
     secure_wipe(entropy, sizeof(entropy));
     secure_wipe(hash, sizeof(hash));
-    secure_wipe(data, entropy_size + 1);
-    free(data);
+    secure_wipe(data_buf, sizeof(data_buf));
 
     return 0;
 }
@@ -195,12 +192,20 @@ int bip39_mnemonic_to_seed(const char *mnemonic, const char *passphrase,
         return -1;
     }
 
-    /* Construct salt: "mnemonic" + passphrase */
-    strcpy(salt, "mnemonic");
-    if (passphrase != NULL) {
-        strncat(salt, passphrase, sizeof(salt) - 9);
+    /* Construct salt: "mnemonic" + passphrase (bounds-safe) */
+    memcpy(salt, "mnemonic", 8);
+    if (passphrase != NULL && passphrase[0] != '\0') {
+        size_t pass_len = strlen(passphrase);
+        if (pass_len > sizeof(salt) - 9) {
+            pass_len = sizeof(salt) - 9;
+        }
+        memcpy(salt + 8, passphrase, pass_len);
+        salt[8 + pass_len] = '\0';
+        salt_len = 8 + pass_len;
+    } else {
+        salt[8] = '\0';
+        salt_len = 8;
     }
-    salt_len = strlen(salt);
 
     /* PBKDF2-HMAC-SHA512 with 2048 iterations */
     ret = pbkdf2_hmac_sha512(

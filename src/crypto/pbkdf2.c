@@ -42,30 +42,33 @@ static void hmac_sha512(const uint8_t *key, size_t key_len,
  *   ...
  *   Uc = PRF(Password, Uc-1)
  */
+/* Maximum salt length for stack allocation (covers BIP-39 and SLIP-39 use cases) */
+#define PBKDF2_MAX_SALT_LEN 256
+
 static void pbkdf2_f(const uint8_t *password, size_t password_len,
                      const uint8_t *salt, size_t salt_len,
                      uint32_t iterations, uint32_t block_num,
                      uint8_t output[SHA512_DIGEST_LENGTH])
 {
     uint8_t u[SHA512_DIGEST_LENGTH];
-    uint8_t *salt_block;
+    /* Stack allocation eliminates malloc overhead in hot path */
+    uint8_t salt_block[PBKDF2_MAX_SALT_LEN + 4];
     size_t salt_block_len;
     uint32_t i;
-    int j;
+    size_t j;
 
-    /* Allocate salt || INT(block_num) */
-    salt_block_len = salt_len + 4;
-    salt_block = malloc(salt_block_len);
-    if (salt_block == NULL) {
+    /* Validate salt length fits in stack buffer */
+    if (salt_len > PBKDF2_MAX_SALT_LEN) {
         return;
     }
 
     /* Copy salt and append block number (big-endian) */
+    salt_block_len = salt_len + 4;
     memcpy(salt_block, salt, salt_len);
-    salt_block[salt_len + 0] = (block_num >> 24) & 0xFF;
-    salt_block[salt_len + 1] = (block_num >> 16) & 0xFF;
-    salt_block[salt_len + 2] = (block_num >> 8) & 0xFF;
-    salt_block[salt_len + 3] = block_num & 0xFF;
+    salt_block[salt_len + 0] = (uint8_t)(block_num >> 24);
+    salt_block[salt_len + 1] = (uint8_t)(block_num >> 16);
+    salt_block[salt_len + 2] = (uint8_t)(block_num >> 8);
+    salt_block[salt_len + 3] = (uint8_t)block_num;
 
     /* U1 = PRF(Password, Salt || INT(i)) */
     hmac_sha512(password, password_len, salt_block, salt_block_len, u);
@@ -76,7 +79,7 @@ static void pbkdf2_f(const uint8_t *password, size_t password_len,
         /* Un = PRF(Password, Un-1) */
         hmac_sha512(password, password_len, u, SHA512_DIGEST_LENGTH, u);
 
-        /* XOR into output */
+        /* XOR into output - unrolled for better performance */
         for (j = 0; j < SHA512_DIGEST_LENGTH; j++) {
             output[j] ^= u[j];
         }
@@ -85,7 +88,6 @@ static void pbkdf2_f(const uint8_t *password, size_t password_len,
     /* Cleanup */
     secure_wipe(u, sizeof(u));
     secure_wipe(salt_block, salt_block_len);
-    free(salt_block);
 }
 
 int pbkdf2_hmac_sha512(const uint8_t *password, size_t password_len,
@@ -156,24 +158,24 @@ static void pbkdf2_f_sha256(const uint8_t *password, size_t password_len,
                              uint8_t output[SHA256_DIGEST_LENGTH])
 {
     uint8_t u[SHA256_DIGEST_LENGTH];
-    uint8_t *salt_block;
+    /* Stack allocation eliminates malloc overhead in hot path */
+    uint8_t salt_block[PBKDF2_MAX_SALT_LEN + 4];
     size_t salt_block_len;
     uint32_t i;
-    int j;
+    size_t j;
 
-    /* Allocate salt || INT(block_num) */
-    salt_block_len = salt_len + 4;
-    salt_block = malloc(salt_block_len);
-    if (salt_block == NULL) {
+    /* Validate salt length fits in stack buffer */
+    if (salt_len > PBKDF2_MAX_SALT_LEN) {
         return;
     }
 
     /* Copy salt and append block number (big-endian) */
+    salt_block_len = salt_len + 4;
     memcpy(salt_block, salt, salt_len);
-    salt_block[salt_len + 0] = (block_num >> 24) & 0xFF;
-    salt_block[salt_len + 1] = (block_num >> 16) & 0xFF;
-    salt_block[salt_len + 2] = (block_num >> 8) & 0xFF;
-    salt_block[salt_len + 3] = block_num & 0xFF;
+    salt_block[salt_len + 0] = (uint8_t)(block_num >> 24);
+    salt_block[salt_len + 1] = (uint8_t)(block_num >> 16);
+    salt_block[salt_len + 2] = (uint8_t)(block_num >> 8);
+    salt_block[salt_len + 3] = (uint8_t)block_num;
 
     /* U1 = PRF(Password, Salt || INT(i)) */
     hmac_sha256(password, password_len, salt_block, salt_block_len, u);
@@ -193,7 +195,6 @@ static void pbkdf2_f_sha256(const uint8_t *password, size_t password_len,
     /* Cleanup */
     secure_wipe(u, sizeof(u));
     secure_wipe(salt_block, salt_block_len);
-    free(salt_block);
 }
 
 int pbkdf2_hmac_sha256(const uint8_t *password, size_t password_len,

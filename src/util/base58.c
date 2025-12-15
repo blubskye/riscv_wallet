@@ -30,11 +30,16 @@ static const int8_t base58_map[256] = {
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
 };
 
+/* Stack buffer size for small inputs (covers most addresses and hashes) */
+#define BASE58_STACK_BUF_SIZE 128
+
 int base58_encode(const uint8_t *data, size_t data_len,
                   char *output, size_t output_len)
 {
     size_t i, j, high, carry, size;
+    uint8_t stack_buf[BASE58_STACK_BUF_SIZE];
     uint8_t *buf;
+    int need_free = 0;
 
     if (data == NULL || output == NULL || data_len == 0) {
         return -1;
@@ -43,9 +48,16 @@ int base58_encode(const uint8_t *data, size_t data_len,
     /* Estimate size: log(256) / log(58) ≈ 1.37 */
     size = data_len * 138 / 100 + 1;
 
-    buf = calloc(size, 1);
-    if (buf == NULL) {
-        return -1;
+    /* Use stack buffer for small inputs, heap for large */
+    if (size <= BASE58_STACK_BUF_SIZE) {
+        buf = stack_buf;
+        memset(buf, 0, size);
+    } else {
+        buf = calloc(size, 1);
+        if (buf == NULL) {
+            return -1;
+        }
+        need_free = 1;
     }
 
     /* Convert to base58 */
@@ -71,7 +83,7 @@ int base58_encode(const uint8_t *data, size_t data_len,
     /* Check output buffer size */
     size_t result_len = leading_zeros + j + 1;
     if (result_len >= output_len) {
-        free(buf);
+        if (need_free) free(buf);
         return -1;
     }
 
@@ -87,7 +99,7 @@ int base58_encode(const uint8_t *data, size_t data_len,
     }
     output[i] = '\0';
 
-    free(buf);
+    if (need_free) free(buf);
     return (int)i;
 }
 
@@ -96,7 +108,9 @@ int base58_decode(const char *input, uint8_t *output, size_t *output_len)
     size_t input_len, i, j;
     int carry;
     size_t size;
+    uint8_t stack_buf[BASE58_STACK_BUF_SIZE];
     uint8_t *buf;
+    int need_free = 0;
     size_t leading_ones = 0;
 
     if (input == NULL || output == NULL || output_len == NULL) {
@@ -117,16 +131,23 @@ int base58_decode(const char *input, uint8_t *output, size_t *output_len)
     /* Estimate size */
     size = input_len * 733 / 1000 + 1;
 
-    buf = calloc(size, 1);
-    if (buf == NULL) {
-        return -1;
+    /* Use stack buffer for small inputs, heap for large */
+    if (size <= BASE58_STACK_BUF_SIZE) {
+        buf = stack_buf;
+        memset(buf, 0, size);
+    } else {
+        buf = calloc(size, 1);
+        if (buf == NULL) {
+            return -1;
+        }
+        need_free = 1;
     }
 
     /* Convert from base58 */
     for (i = leading_ones; i < input_len; i++) {
         int8_t digit = base58_map[(unsigned char)input[i]];
         if (digit < 0) {
-            free(buf);
+            if (need_free) free(buf);
             return -1;  /* Invalid character */
         }
 
@@ -145,7 +166,7 @@ int base58_decode(const char *input, uint8_t *output, size_t *output_len)
     /* Check output size */
     size_t result_len = leading_ones + j + 1;
     if (result_len > *output_len) {
-        free(buf);
+        if (need_free) free(buf);
         return -1;
     }
 
@@ -160,7 +181,7 @@ int base58_decode(const char *input, uint8_t *output, size_t *output_len)
     }
 
     *output_len = result_len;
-    free(buf);
+    if (need_free) free(buf);
     return 0;
 }
 

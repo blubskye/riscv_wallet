@@ -61,9 +61,13 @@ int eth_checksum_address(const char *address, char *output, size_t output_len)
         return -1;
     }
 
-    /* Convert to lowercase for hashing */
+    /* Convert to lowercase for hashing using bit manipulation
+     * For ASCII hex chars: lowercase = char | 0x20 (works for A-F and a-f)
+     * Digits 0-9 are unaffected since bit 5 is already 1 */
     for (i = 0; i < 40; i++) {
-        lower[i] = tolower((unsigned char)addr[i]);
+        char c = addr[i];
+        /* For hex digits, OR with 0x20 converts A-F to a-f, leaves 0-9 and a-f unchanged */
+        lower[i] = (c >= 'A' && c <= 'F') ? (c | 0x20) : c;
     }
     lower[40] = '\0';
 
@@ -74,15 +78,24 @@ int eth_checksum_address(const char *address, char *output, size_t output_len)
     output[0] = '0';
     output[1] = 'x';
 
-    for (i = 0; i < 40; i++) {
-        int hash_nibble = (i % 2 == 0)
-            ? (hash[i / 2] >> 4)
-            : (hash[i / 2] & 0x0F);
+    /* Unrolled loop processing 2 characters per hash byte */
+    for (i = 0; i < 20; i++) {
+        uint8_t h = hash[i];
+        char c0 = lower[i * 2];
+        char c1 = lower[i * 2 + 1];
 
-        if (hash_nibble >= 8 && lower[i] >= 'a' && lower[i] <= 'f') {
-            output[2 + i] = toupper((unsigned char)lower[i]);
+        /* High nibble check for first character */
+        if ((h & 0x80) && c0 >= 'a' && c0 <= 'f') {
+            output[2 + i * 2] = c0 & ~0x20;  /* Clear bit 5 to uppercase */
         } else {
-            output[2 + i] = lower[i];
+            output[2 + i * 2] = c0;
+        }
+
+        /* Low nibble check for second character */
+        if ((h & 0x08) && c1 >= 'a' && c1 <= 'f') {
+            output[2 + i * 2 + 1] = c1 & ~0x20;  /* Clear bit 5 to uppercase */
+        } else {
+            output[2 + i * 2 + 1] = c1;
         }
     }
     output[42] = '\0';
